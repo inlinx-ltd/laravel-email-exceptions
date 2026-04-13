@@ -1,39 +1,44 @@
 {
-    "name": "abrigham/laravel-email-exceptions",
-    "description": "Email Exceptions from your laravel application",
+    "name": "inlinx-ltd/laravel-email-exceptions",
+    "description": "Email exceptions from your Laravel application with per-exception and global throttling. Fork of abrigham/laravel-email-exceptions, maintained for Laravel 9-12.",
     "license": "MIT",
-    "keywords": ["email", "exception", "laravel", "laravel-5-package", "exception-handling", "debugging"],
+    "keywords": ["email", "exception", "laravel", "exception-handling", "debugging", "notifications"],
     "authors": [
         {
             "name": "Aaron Brigham",
             "email": "abrigham1@gmail.com"
+        },
+        {
+            "name": "Inlinx Ltd",
+            "homepage": "https://github.com/inlinx-ltd"
         }
     ],
     "minimum-stability": "stable",
     "require": {
-        "php": "^7.2|^8.0",
-        "illuminate/support": "^6.0|^7.0|^8.0"
+        "php": "^8.2",
+        "illuminate/support": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/mail": "^9.0|^10.0|^11.0|^12.0",
+        "illuminate/cache": "^9.0|^10.0|^11.0|^12.0"
     },
     "require-dev": {
-        "phpunit/phpunit": "5.*",
-        "squizlabs/php_codesniffer": "2.*",
-        "orchestra/testbench": "~3.0",
-        "mockery/mockery": "~1.0"
+        "phpunit/phpunit": "^10.0|^11.0",
+        "orchestra/testbench": "^8.0|^9.0|^10.0",
+        "mockery/mockery": "^1.6"
     },
     "autoload": {
         "psr-4": {
-            "Abrigham\\LaravelEmailExceptions\\": "src/"
+            "InlinxLtd\\LaravelEmailExceptions\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Abrigham\\LaravelEmailExceptions\\Tests\\": "tests/"
+            "InlinxLtd\\LaravelEmailExceptions\\Tests\\": "tests/"
         }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "Abrigham\\LaravelEmailExceptions\\EmailExceptionsServiceProvider"
+                "InlinxLtd\\LaravelEmailExceptions\\EmailExceptionsServiceProvider"
             ]
         }
     }

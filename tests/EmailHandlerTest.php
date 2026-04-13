@@ -1,47 +1,46 @@
 <?php
-namespace Abrigham\LaravelEmailExceptions\Tests;
 
-use Orchestra\Testbench\TestCase;
-use Exception;
+namespace InlinxLtd\LaravelEmailExceptions\Tests;
+
 use BadMethodCallException;
-use Mockery;
-use Mail;
+use Exception;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Mail;
+use InlinxLtd\LaravelEmailExceptions\Exceptions\EmailHandler;
+use Mockery;
+use Orchestra\Testbench\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 
 class EmailHandlerTest extends TestCase
 {
+    protected EmailHandler $emailHandlerMock;
 
-    /**
-     * @var email handler mock object
-     */
-    protected $emailHandlerMock;
-
-    public function setUp()
+    protected function setUp(): void
     {
         parent::setUp();
 
-        // set up our email handler mock
-        $this->emailHandlerMock = Mockery::mock(
-            'Abrigham\LaravelEmailExceptions\Exceptions\EmailHandler'
-        )->makePartial()->shouldAllowMockingProtectedMethods();
+        $this->emailHandlerMock = Mockery::mock(EmailHandler::class)
+            ->makePartial()
+            ->shouldAllowMockingProtectedMethods();
     }
 
-    /**
-     * test report function
-     *
-     * @dataProvider reportProvider
-     * @param $shouldMail
-     */
-    public function testReport($shouldMail)
+    protected function tearDown(): void
     {
-        // mock exception used for testing
+        Mockery::close();
+        parent::tearDown();
+    }
+
+    // -----------------------------------------------------------------------
+    // report()
+    // -----------------------------------------------------------------------
+
+    #[DataProvider('reportProvider')]
+    public function test_report(bool $shouldMail): void
+    {
         $exception = new Exception('Test Exception');
 
-        // set up config value
         config(['laravelEmailExceptions.ErrorEmail.email' => false]);
 
-        // we expect the email handler to receive should mail
-        // and return true
         $this->emailHandlerMock
             ->shouldReceive('shouldMail')
             ->with($exception)
@@ -49,866 +48,297 @@ class EmailHandlerTest extends TestCase
             ->andReturn($shouldMail);
 
         if ($shouldMail) {
-            // we expect email handler to receive mailException and return null
             $this->emailHandlerMock
                 ->shouldReceive('mailException')
                 ->with($exception)
                 ->once()
                 ->andReturn(null);
         } else {
-            // we expect the mail handler to not receive mailException
-            $this->emailHandlerMock
-                ->shouldNotReceive('mailException');
+            $this->emailHandlerMock->shouldNotReceive('mailException');
         }
 
-        // we expect email handler to receive callParentReport and return null
         $this->emailHandlerMock
             ->shouldReceive('callParentReport')
             ->with($exception)
             ->once()
             ->andReturn(null);
 
-        // function should return void so assertNull
-        $actual = $this->emailHandlerMock->report($exception);
-        $this->assertNull($actual);
+        $this->assertNull($this->emailHandlerMock->report($exception));
     }
 
-    /**
-     * data provider for testReport
-     *
-     * @return array
-     */
-    public function reportProvider()
+    public static function reportProvider(): array
     {
         return [
-            'should mail false' => [
-                false,
-            ],
-            'should mail true' => [
-                true,
-            ],
+            'should mail false' => [false],
+            'should mail true'  => [true],
         ];
     }
 
-    /**
-     * test should mail function
-     *
-     * @dataProvider shouldMailProvider
-     * @param $email
-     * @param $toEmailAddress
-     * @param $fromEmailAddress
-     * @param $shouldntReportReturn
-     * @param $isInDontEmailListReturn
-     * @param $throttleReturn
-     * @param $appSpecificDontEmailReturn
-     * @param $globalThrottleReturn
-     * @param $expected
-     */
-    public function testShouldMail(
-        $email,
-        $toEmailAddress,
-        $fromEmailAddress,
-        $shouldntReportReturn,
-        $isInDontEmailListReturn,
-        $throttleReturn,
-        $appSpecificDontEmailReturn,
-        $globalThrottleReturn,
-        $expected
-    ) {
+    // -----------------------------------------------------------------------
+    // shouldMail()
+    // -----------------------------------------------------------------------
 
-        // mock exception used for testing
+    #[DataProvider('shouldMailProvider')]
+    public function test_should_mail(
+        bool   $email,
+        mixed  $toEmailAddress,
+        mixed  $fromEmailAddress,
+        bool   $shouldntReportReturn,
+        bool   $isInDontEmailListReturn,
+        bool   $isThrottledReturn,
+        bool   $appSpecificDontEmailReturn,
+        bool   $isGloballyThrottledReturn,
+        bool   $expected,
+    ): void {
         $exception = new Exception('Test Exception');
 
-        // setting our config values from our data provider
         config([
-            'laravelEmailExceptions.ErrorEmail.email' => $email,
-            'laravelEmailExceptions.ErrorEmail.toEmailAddress' => $toEmailAddress,
+            'laravelEmailExceptions.ErrorEmail.email'            => $email,
+            'laravelEmailExceptions.ErrorEmail.toEmailAddress'   => $toEmailAddress,
             'laravelEmailExceptions.ErrorEmail.fromEmailAddress' => $fromEmailAddress,
         ]);
 
-        if ($email == true && $toEmailAddress && $fromEmailAddress) {
-            // if email is tru and we have a to and from address we should
-            // receive a call to shouldntReport
-            // if email is true and we have a to and from address we should
-            // receive a call to isInDontEmailList
+        if ($email && $toEmailAddress && $fromEmailAddress) {
             $this->emailHandlerMock
                 ->shouldReceive('shouldntReport')
-                ->with($exception)
-                ->once()
-                ->andReturn($shouldntReportReturn);
-            if ($shouldntReportReturn == false) {
+                ->with($exception)->once()->andReturn($shouldntReportReturn);
+
+            if (!$shouldntReportReturn) {
                 $this->emailHandlerMock
                     ->shouldReceive('isInDontEmailList')
-                    ->with($exception)
-                    ->once()
-                    ->andReturn($isInDontEmailListReturn);
-                if ($isInDontEmailListReturn == false) {
-                    // should receive a call to appSpecificDontEmail
+                    ->with($exception)->once()->andReturn($isInDontEmailListReturn);
+
+                if (!$isInDontEmailListReturn) {
                     $this->emailHandlerMock
                         ->shouldReceive('appSpecificDontEmail')
-                        ->once()
-                        ->with($exception)
-                        ->andReturn($appSpecificDontEmailReturn);
-                    if ($appSpecificDontEmailReturn == false) {
-                        // should receive a call to throttle
+                        ->with($exception)->once()->andReturn($appSpecificDontEmailReturn);
+
+                    if (!$appSpecificDontEmailReturn) {
                         $this->emailHandlerMock
-                            ->shouldReceive('throttle')
-                            ->with($exception)
-                            ->once()
-                            ->andReturn($throttleReturn);
-                        if ($throttleReturn == false) {
-                            // if throttle return is also false we should receive a
-                            // call to globalThrottle
+                            ->shouldReceive('isThrottled')
+                            ->with($exception)->once()->andReturn($isThrottledReturn);
+
+                        if (!$isThrottledReturn) {
                             $this->emailHandlerMock
-                                ->shouldReceive('globalThrottle')
-                                ->withNoArgs()
-                                ->once()
-                                ->andReturn($globalThrottleReturn);
+                                ->shouldReceive('isGloballyThrottled')
+                                ->withNoArgs()->once()->andReturn($isGloballyThrottledReturn);
                         } else {
-                            // if app specific email return is true we shouldn't receive a call
-                            // to global throttle
-                            $this->emailHandlerMock
-                                ->shouldNotReceive('globalThrottle');
+                            $this->emailHandlerMock->shouldNotReceive('isGloballyThrottled');
                         }
                     } else {
-                        // if throttle is true we wont get calls to appSpecificDontEmail or globalThrottle
-                        $this->emailHandlerMock
-                            ->shouldNotReceive('throttle');
-                        $this->emailHandlerMock
-                            ->shouldNotReceive('globalThrottle');
+                        $this->emailHandlerMock->shouldNotReceive('isThrottled');
+                        $this->emailHandlerMock->shouldNotReceive('isGloballyThrottled');
                     }
                 } else {
-                    // if isInDontEmailList is true we won't receive throttle appSpecificDontEmail or globalThrottle
-                    $this->emailHandlerMock
-                        ->shouldNotReceive('appSpecificDontEmail');
-                    $this->emailHandlerMock
-                        ->shouldNotReceive('throttle');
-                    $this->emailHandlerMock
-                        ->shouldNotReceive('globalThrottle');
+                    $this->emailHandlerMock->shouldNotReceive('appSpecificDontEmail');
+                    $this->emailHandlerMock->shouldNotReceive('isThrottled');
+                    $this->emailHandlerMock->shouldNotReceive('isGloballyThrottled');
                 }
             } else {
-                // if shouldntReport is true we won't receive isInDontEmail, throttle, appSpecificDontEmail or
-                // global throttle
-                $this->emailHandlerMock
-                    ->shouldNotReceive('isInDontEmailList');
-                $this->emailHandlerMock
-                    ->shouldNotReceive('appSpecificDontEmail');
-                $this->emailHandlerMock
-                    ->shouldNotReceive('throttle');
-                $this->emailHandlerMock
-                    ->shouldNotReceive('globalThrottle');
+                $this->emailHandlerMock->shouldNotReceive('isInDontEmailList');
+                $this->emailHandlerMock->shouldNotReceive('appSpecificDontEmail');
+                $this->emailHandlerMock->shouldNotReceive('isThrottled');
+                $this->emailHandlerMock->shouldNotReceive('isGloballyThrottled');
             }
         }
 
-        // check if actual = our expected value
-        $actual = $this->emailHandlerMock->shouldMail($exception);
-        $this->assertEquals($expected, $actual);
+        $this->assertEquals($expected, $this->emailHandlerMock->shouldMail($exception));
     }
 
-    /**
-     * data provider for the testShouldMail
-     *
-     * @return array
-     */
-    public function shouldMailProvider()
+    public static function shouldMailProvider(): array
     {
         return [
-            'email off' => [
-                // email
-                false,
-                // toEmailAddress
-                false,
-                // fromEmailAddress
-                false,
-                // shouldntReportReturn
-                false,
-                // isInDontEmailListReturn
-                false,
-                // throttleReturn
-                false,
-                // appSpecificDontEmailReturn
-                false,
-                // globalThrottleReturn
-                false,
-                // expected
-                false,
-            ],
-            'email on all others off' => [
-                // email
-                true,
-                // toEmailAddress
-                false,
-                // fromEmailAddress
-                false,
-                // shouldntReportReturn
-                false,
-                // isInDontEmailListReturn
-                false,
-                // throttleReturn
-                false,
-                // appSpecificDontEmailReturn
-                false,
-                // globalThrottleReturn
-                false,
-                // expected
-                false,
-            ],
-            'email on with to' => [
-                // email
-                true,
-                // toEmailAddress
-                "dev@example.com",
-                // fromEmailAddress
-                false,
-                // shouldntReportReturn
-                false,
-                // isInDontEmailListReturn
-                false,
-                // throttleReturn
-                false,
-                // appSpecificDontEmailReturn
-                false,
-                // globalThrottleReturn
-                false,
-                // expected
-                false,
-            ],
-            'email on with to and from and not throttled or in dont lists' => [
-                // email
-                true,
-                // toEmailAddress
-                "dev@example.com",
-                // fromEmailAddress
-                "dev2@example.com",
-                // shouldntReportReturn
-                false,
-                // isInDontEmailListReturn
-                false,
-                // throttleReturn
-                false,
-                // appSpecificDontEmailReturn
-                false,
-                // globalThrottleReturn
-                false,
-                // expected
-                true,
-            ],
-            'email on with to and from and in dont report list' => [
-                // email
-                true,
-                // toEmailAddress
-                "dev@example.com",
-                // fromEmailAddress
-                "dev2@example.com",
-                // shouldntReportReturn
-                true,
-                // isInDontEmailListReturn
-                false,
-                // throttleReturn
-                false,
-                // appSpecificDontEmailReturn
-                false,
-                // globalThrottleReturn
-                false,
-                // expected
-                false,
-            ],
-            'email on with to and from and in dont email list' => [
-                // email
-                true,
-                // toEmailAddress
-                "dev@example.com",
-                // fromEmailAddress
-                "dev2@example.com",
-                // shouldntReportReturn
-                false,
-                // isInDontEmailListReturn
-                true,
-                // throttleReturn
-                false,
-                // appSpecificDontEmailReturn
-                false,
-                // globalThrottleReturn
-                false,
-                // expected
-                false,
-            ],
-            'email on with to and from and throttle true' => [
-                // email
-                true,
-                // toEmailAddress
-                "dev@example.com",
-                // fromEmailAddress
-                "dev2@example.com",
-                // shouldntReportReturn
-                false,
-                // isInDontEmailListReturn
-                false,
-                // throttleReturn
-                true,
-                // appSpecificDontEmailReturn
-                false,
-                // globalThrottleReturn
-                false,
-                // expected
-                false,
-            ],
-            'email on with to and from and global throttle true' => [
-                // email
-                true,
-                // toEmailAdrress
-                "dev@example.com",
-                // fromEmailAddress
-                "dev2@example.com",
-                // shouldntReportReturn
-                false,
-                // isInDontEmailListReturn
-                false,
-                // throttleReturn
-                false,
-                // appSpecificDontEmailReturn
-                false,
-                // globalThrottleReturn
-                true,
-                // expected
-                false,
-            ],
-            'email on with to and from and app specific dont email true' => [
-                // email
-                true,
-                // toEmailAddress
-                "dev@example.com",
-                // fromEmailAddress
-                "dev2@example.com",
-                // shouldntReportReturn
-                false,
-                // isInDontEmailListReturn
-                false,
-                // throttleReturn
-                false,
-                // appSpecificDontEmailReturn
-                true,
-                // globalThrottleReturn
-                false,
-                // expected
-                false,
-            ],
+            'email off' => [false, false, false, false, false, false, false, false, false],
+            'email on no addresses' => [true, false, false, false, false, false, false, false, false],
+            'email on to only' => [true, 'dev@example.com', false, false, false, false, false, false, false],
+            'passes all checks' => [true, 'dev@example.com', 'noreply@example.com', false, false, false, false, false, true],
+            'shouldntReport true' => [true, 'dev@example.com', 'noreply@example.com', true, false, false, false, false, false],
+            'in dont email list' => [true, 'dev@example.com', 'noreply@example.com', false, true, false, false, false, false],
+            'throttled' => [true, 'dev@example.com', 'noreply@example.com', false, false, true, false, false, false],
+            'app specific dont email' => [true, 'dev@example.com', 'noreply@example.com', false, false, false, true, false, false],
+            'globally throttled' => [true, 'dev@example.com', 'noreply@example.com', false, false, false, false, true, false],
         ];
     }
 
-    /**
-     * test should mail function
-     *
-     * @dataProvider mailExceptionProvider
-     * @param $subject
-     */
-    public function testMailException($subject)
-    {
+    // -----------------------------------------------------------------------
+    // mailException()
+    // -----------------------------------------------------------------------
 
-        // mock exception for testing
+    #[DataProvider('mailExceptionProvider')]
+    public function test_mail_exception(?string $subject): void
+    {
         $exception = new Exception('Test Exception');
 
-        // setting up config values
         config([
-            'laravelEmailExceptions.ErrorEmail.toEmailAddress' => 'dev@example.com',
-            'laravelEmailExceptions.ErrorEmail.fromEmailAddress' => 'dev2@example.com',
-            'laravelEmailExceptions.ErrorEmail.subject' => $subject
+            'laravelEmailExceptions.ErrorEmail.toEmailAddress'   => 'dev@example.com',
+            'laravelEmailExceptions.ErrorEmail.fromEmailAddress' => 'noreply@example.com',
+            'laravelEmailExceptions.ErrorEmail.emailSubject'     => $subject,
         ]);
 
-        // we should be testing the closure here too but its a pain in the butt
-        Mail::shouldReceive('send')
-            ->once()
-            ->withAnyArgs();
+        Mail::shouldReceive('send')->once()->withAnyArgs();
 
-        // test that actual is null (function returns void)
-        $actual = $this->emailHandlerMock->mailException($exception);
-        $this->assertNull($actual);
+        $this->assertNull($this->emailHandlerMock->mailException($exception));
     }
 
-    /**
-     * data provider for the testMailException
-     *
-     * @return array
-     */
-    public function mailExceptionProvider()
+    public static function mailExceptionProvider(): array
     {
         return [
-            'default subject' => [
-                null,
-            ],
-            'config subject' => [
-                'Your subject here',
-            ]
+            'default subject' => [null],
+            'custom subject'  => ['Your custom subject'],
         ];
     }
 
-    /**
-     * test the global throttle function
-     *
-     * @dataProvider globalThrottleProvider
-     * @param $globalThrottle
-     * @param $throttleCacheDriver
-     * @param $globalThrottleLimit
-     * @param $globalThrottleDurationMinutes
-     * @param $globalThrottleCacheHasReturn
-     * @param $globalThrottleCacheGetReturn
-     * @param $expected
-     */
-    public function testGlobalThrottle(
-        $globalThrottle,
-        $throttleCacheDriver,
-        $globalThrottleLimit,
-        $globalThrottleDurationMinutes,
-        $globalThrottleCacheHasReturn,
-        $globalThrottleCacheGetReturn,
-        $expected
-    ) {
+    // -----------------------------------------------------------------------
+    // isGloballyThrottled()
+    // -----------------------------------------------------------------------
 
-        // global throttle cache key
-        $globalThrottleCacheKey = 'email_exception_global';
+    #[DataProvider('globalThrottleProvider')]
+    public function test_is_globally_throttled(
+        bool   $globalThrottle,
+        string $throttleCacheDriver,
+        int    $globalThrottleLimit,
+        int    $globalThrottleDurationMinutes,
+        bool   $cacheHas,
+        int    $cacheGet,
+        bool   $expected,
+    ): void {
+        $key = 'email_exception_global';
 
-        // set up the config values from data provider
         config([
-            'laravelEmailExceptions.ErrorEmail.globalThrottle' => $globalThrottle,
-            'laravelEmailExceptions.ErrorEmail.throttleCacheDriver' => $throttleCacheDriver,
-            'laravelEmailExceptions.ErrorEmail.globalThrottleLimit' => $globalThrottleLimit,
-            'laravelEmailExceptions.ErrorEmail.globalThrottleDurationMinutes' => $globalThrottleDurationMinutes,
+            'laravelEmailExceptions.ErrorEmail.globalThrottle'                => $globalThrottle,
+            'laravelEmailExceptions.ErrorEmail.throttleCacheDriver'            => $throttleCacheDriver,
+            'laravelEmailExceptions.ErrorEmail.globalThrottleLimit'            => $globalThrottleLimit,
+            'laravelEmailExceptions.ErrorEmail.globalThrottleDurationMinutes'  => $globalThrottleDurationMinutes,
         ]);
 
-        if ($globalThrottle == false) {
-            // if global throttling is turned off we should
-            // not receive any calls to the cache
-            Cache::shouldReceive('store')
-                ->never();
-            Cache::shouldReceive('has')
-                ->never();
-            Cache::shouldReceive('get')
-                ->never();
-            Cache::shouldReceive('put')
-                ->never();
-            Cache::shouldReceive('increment')
-                ->never();
+        if (!$globalThrottle) {
+            Cache::shouldReceive('store')->never();
         } else {
-            // if global throttling is on we'll at least get a cache has call
-            Cache::shouldReceive('has')
-                ->once()
-                ->with($globalThrottleCacheKey)
-                ->andReturn($globalThrottleCacheHasReturn);
+            $storeMock = Mockery::mock(\Illuminate\Contracts\Cache\Repository::class);
 
-            if ($globalThrottleCacheHasReturn == true) {
-                // if the item is in the cache we'll get a cache get call
-                Cache::shouldReceive('get')
-                    ->once()
-                    ->with($globalThrottleCacheKey, 0)
-                    ->andReturn($globalThrottleCacheGetReturn);
-                if ($globalThrottleCacheGetReturn > $globalThrottleLimit) {
-                    // if we're over our limit we'll receive store twice and increment never
-                    Cache::shouldReceive('store')
-                        ->twice()
-                        ->with($throttleCacheDriver)
-                        ->andReturnSelf();
-                    Cache::shouldReceive('increment')
-                        ->never();
+            Cache::shouldReceive('store')
+                ->with($throttleCacheDriver)
+                ->andReturn($storeMock);
+
+            $storeMock->shouldReceive('has')->with($key)->once()->andReturn($cacheHas);
+
+            if ($cacheHas) {
+                $storeMock->shouldReceive('get')->with($key, 0)->once()->andReturn($cacheGet);
+
+                if ($cacheGet >= $globalThrottleLimit) {
+                    $storeMock->shouldNotReceive('increment');
                 } else {
-                    // if we're not over our limit we'll receive store 3 times and increment once
-                    Cache::shouldReceive('store')
-                        ->times(3)
-                        ->with($throttleCacheDriver)
-                        ->andReturnSelf();
-                    Cache::shouldReceive('increment')
-                        ->once()
-                        ->with($globalThrottleCacheKey);
+                    $storeMock->shouldReceive('increment')->with($key)->once();
                 }
             } else {
-                // if the item is not in the cache we'll receive store twice
-                // and one call to put to get it in the cache
-                // we will not receive an increment call
-                Cache::shouldReceive('store')
-                    ->twice()
-                    ->with($throttleCacheDriver)
-                    ->andReturnSelf();
-                Cache::shouldReceive('put')
-                    ->once()
-                    ->withAnyArgs();
-                Cache::shouldReceive('increment')
-                    ->never();
+                $storeMock->shouldReceive('put')->once()->withAnyArgs();
             }
         }
 
-        // check our expected against our actual
-        $actual = $this->emailHandlerMock->globalThrottle();
-        $this->assertEquals($expected, $actual);
+        $this->assertEquals($expected, $this->emailHandlerMock->isGloballyThrottled());
     }
 
-    /**
-     * data provider for testGlobalThrottle
-     *
-     * @return array
-     */
-    public function globalThrottleProvider()
+    public static function globalThrottleProvider(): array
     {
         return [
-            'global throttle off' => [
-                false,
-                'file',
-                20,
-                30,
-                false,
-                10,
-                false,
-            ],
-            'global throttle on in cache under limit' => [
-                true,
-                'file',
-                20,
-                30,
-                true,
-                10,
-                false,
-            ],
-            'global throttle on in cache over limit' => [
-                true,
-                'file',
-                20,
-                30,
-                true,
-                21,
-                true,
-            ],
-            'global throttle on not in cache' => [
-                true,
-                'file',
-                20,
-                30,
-                false,
-                0,
-                false,
-            ],
+            'global throttle off'                => [false, 'file', 20, 30, false, 0,  false],
+            'in cache under limit'               => [true,  'file', 20, 30, true,  10, false],
+            'in cache at limit (over)'           => [true,  'file', 20, 30, true,  20, true],
+            'not in cache — first email'         => [true,  'file', 20, 30, false, 0,  false],
         ];
     }
 
-    /**
-     * test the throttle function
-     *
-     * @dataProvider throttleProvider
-     * @param $throttle
-     * @param $throttleCacheDriver
-     * @param $isInDontThrottleListReturn
-     * @param $throttleCacheHasReturn
-     * @param $throttleDurationMinutes
-     * @param $expected
-     */
-    public function testThrottle(
-        $throttle,
-        $throttleCacheDriver,
-        $isInDontThrottleListReturn,
-        $throttleCacheHasReturn,
-        $throttleDurationMinutes,
-        $expected
-    ) {
+    // -----------------------------------------------------------------------
+    // isThrottled()
+    // -----------------------------------------------------------------------
 
-        // mock exception used for testing
+    #[DataProvider('throttleProvider')]
+    public function test_is_throttled(
+        bool   $throttle,
+        string $throttleCacheDriver,
+        bool   $isInDontThrottleListReturn,
+        bool   $cacheHas,
+        int    $throttleDurationMinutes,
+        bool   $expected,
+    ): void {
         $exception = new Exception('Test Exception');
+        $cacheKey  = 'laravelEmailExceptionExceptionTestException0';
 
-        // set up the config
         config([
-            'laravelEmailExceptions.ErrorEmail.throttle' => $throttle,
-            'laravelEmailExceptions.ErrorEmail.throttleCacheDriver' => $throttleCacheDriver,
+            'laravelEmailExceptions.ErrorEmail.throttle'              => $throttle,
+            'laravelEmailExceptions.ErrorEmail.throttleCacheDriver'    => $throttleCacheDriver,
             'laravelEmailExceptions.ErrorEmail.throttleDurationMinutes' => $throttleDurationMinutes,
         ]);
 
-        // set up mock cache key
-        $throttleCacheKey = 'insert_key_here';
-
-
-        if ($throttle == false) {
-            // if throttling is turned off we will not receive a call to check the dont throttle list
-            $this->emailHandlerMock
-                ->shouldNotReceive('isInDontThrottleList');
+        if (!$throttle) {
+            $this->emailHandlerMock->shouldNotReceive('isInDontThrottleList');
+            Cache::shouldReceive('store')->never();
         } else {
-            // else we will receive a call to check if its in the dont throttle list
             $this->emailHandlerMock
                 ->shouldReceive('isInDontThrottleList')
-                ->once()
-                ->with($exception)
-                ->andReturn($isInDontThrottleListReturn);
-        }
+                ->with($exception)->once()->andReturn($isInDontThrottleListReturn);
 
-        if ($throttle == false || $isInDontThrottleListReturn) {
-            // if throttling is off or its in the dont throttle list
-            // we wont be calling any of the other functions
-            Cache::shouldReceive('store')
-                ->never();
-            Cache::shouldReceive('has')
-                ->never();
-            Cache::shouldReceive('put')
-                ->never();
-            $this->emailHandlerMock
-                ->shouldNotReceive('getThrottleCacheKey');
-        } else {
-            // we made it past the dont throttle list and throttling is on
-            // we'll at least recieve a call to check it's in the cache
-            Cache::shouldReceive('has')
-                ->once()
-                ->with($throttleCacheKey)
-                ->andReturn($throttleCacheHasReturn);
-            if ($throttleCacheHasReturn == true) {
-                // if it is in the cache we'll receive a call to get the cache key once
-                $this->emailHandlerMock
-                    ->shouldReceive('getThrottleCacheKey')
-                    ->once()
-                    ->with($exception)
-                    ->andReturn($throttleCacheKey);
+            if (!$isInDontThrottleListReturn) {
+                $storeMock = Mockery::mock(\Illuminate\Contracts\Cache\Repository::class);
+                Cache::shouldReceive('store')->with($throttleCacheDriver)->andReturn($storeMock);
 
-                // we'll also receive a call to store once
-                Cache::shouldReceive('store')
-                    ->once()
-                    ->with($throttleCacheDriver)
-                    ->andReturnSelf();
+                $storeMock->shouldReceive('has')->with($cacheKey)->once()->andReturn($cacheHas);
 
-                // we will not receive a call to put it in the cache since its already there
-                Cache::shouldReceive('put')
-                    ->never();
+                if (!$cacheHas) {
+                    $storeMock->shouldReceive('put')->once()->withAnyArgs();
+                }
             } else {
-                // if its not in the cache we'll receive two calls to store (once for has once for put)
-                Cache::shouldReceive('store')
-                    ->twice()
-                    ->with($throttleCacheDriver)
-                    ->andReturnSelf();
-
-                // we'll receive two calls to get the cache key (once for has once for put)
-                $this->emailHandlerMock
-                    ->shouldReceive('getThrottleCacheKey')
-                    ->twice()
-                    ->with($exception)
-                    ->andReturn($throttleCacheKey);
-
-                // and we'll receive one call to put the item in the cache
-                Cache::shouldReceive('put')
-                    ->once()
-                    ->withAnyArgs();
+                Cache::shouldReceive('store')->never();
             }
         }
 
-        // check if our actual = expected
-        $actual = $this->emailHandlerMock->throttle($exception);
-        $this->assertEquals($expected, $actual);
+        $this->assertEquals($expected, $this->emailHandlerMock->isThrottled($exception));
     }
 
-    /**
-     * data provider for testThrottle
-     */
-    public function throttleProvider()
+    public static function throttleProvider(): array
     {
         return [
-            'throttle off' => [
-                false,
-                'file',
-                false,
-                false,
-                5,
-                false,
-            ],
-            'throttle on in dont throttle list' => [
-                false,
-                'file',
-                true,
-                false,
-                5,
-                false,
-            ],
-            'throttle on has cache key' => [
-                true,
-                'file',
-                false,
-                true,
-                5,
-                true,
-            ],
-            'throttle on does not have cache key' => [
-                true,
-                'file',
-                false,
-                false,
-                5,
-                false,
-            ],
+            'throttle off'                  => [false, 'file', false, false, 5, false],
+            'in dont throttle list'         => [true,  'file', true,  false, 5, false],
+            'throttle on — in cache'        => [true,  'file', false, true,  5, true],
+            'throttle on — not in cache'    => [true,  'file', false, false, 5, false],
         ];
     }
 
-    /**
-     * test get throttle cache key function
-     *
-     * @dataProvider getThrottleCacheKeyProvider
-     * @param $exception
-     * @param $expected
-     */
-    public function testGetThrottleCacheKey($exception, $expected)
+    // -----------------------------------------------------------------------
+    // buildThrottleCacheKey()
+    // -----------------------------------------------------------------------
+
+    #[DataProvider('buildThrottleCacheKeyProvider')]
+    public function test_build_throttle_cache_key(\Throwable $exception, string $expected): void
     {
-        // check if actual = expected
-        $actual = $this->emailHandlerMock->getThrottleCacheKey($exception);
-        $this->assertEquals($expected, $actual);
+        $this->assertEquals($expected, $this->emailHandlerMock->buildThrottleCacheKey($exception));
     }
 
-    /**
-     * data provider for testGetThrottleCacheKey
-     *
-     * @return array
-     */
-    public function getThrottleCacheKeyProvider()
+    public static function buildThrottleCacheKeyProvider(): array
     {
         return [
-            'Exception 1' => [
-                new Exception('Test-Exception', 1),
-                'laravelEmailExceptionExceptionTestException1',
-            ],
-            'Exception 2' => [
-                new Exception('Test$Some Exception', 2),
-                'laravelEmailExceptionExceptionTestSomeException2',
-            ],
-            'Exception 3' => [
-                new BadMethodCallException('Test-Third_Exception', 3),
-                'laravelEmailExceptionBadMethodCallExceptionTestThirdException3',
-            ],
+            'basic exception'           => [new Exception('Test-Exception', 1),       'laravelEmailExceptionExceptionTestException1'],
+            'special chars stripped'    => [new Exception('Test$Some Exception', 2),  'laravelEmailExceptionExceptionTestSomeException2'],
+            'BadMethodCallException'    => [new BadMethodCallException('Test-Third_Exception', 3), 'laravelEmailExceptionBadMethodCallExceptionTestThirdException3'],
         ];
     }
 
-    /**
-     * test is in list function
-     *
-     * @dataProvider isInListProvider
-     * @param $exception
-     * @param $list
-     * @param $expected
-     */
-    public function testIsInList($exception, $list, $expected)
+    // -----------------------------------------------------------------------
+    // isInList()
+    // -----------------------------------------------------------------------
+
+    #[DataProvider('isInListProvider')]
+    public function test_is_in_list(\Throwable $exception, array $list, bool $expected): void
     {
-        // check if actual = expected
-        $actual = $this->emailHandlerMock->isInList($list, $exception);
-        $this->assertEquals($expected, $actual);
+        $this->assertEquals($expected, $this->emailHandlerMock->isInList($list, $exception));
     }
 
-    /**
-     * data provider for test is in list
-     *
-     * @return array
-     */
-    public function isInListProvider()
+    public static function isInListProvider(): array
     {
         return [
-            'in list' => [
-                new Exception('Test Exception'),
-                [new Exception('Test Exception')],
-                true,
-            ],
-            'not in list' => [
-                new Exception('Test Exception'),
-                [new BadMethodCallException('Other Exception')],
-                false,
-            ],
-        ];
-    }
-
-    /**
-     * test is in dont throttle list function
-     *
-     * @dataProvider isInDontThrottleListProvider
-     * @param $exception
-     * @param $dontThrottleList
-     * @param $isInListReturn
-     * @param $expected
-     */
-    public function testIsInDontThrottleList($exception, $dontThrottleList, $isInListReturn, $expected)
-    {
-        // set up config values
-        config([
-            'laravelEmailExceptions.ErrorEmail.dontThrottle' => $dontThrottleList,
-        ]);
-
-        // we should receive a call to is in list
-        $this->emailHandlerMock
-            ->shouldReceive('isInList')
-            ->once()
-            ->with($dontThrottleList, $exception)
-            ->andReturn($isInListReturn);
-
-        // check if actual is = to expected
-        $actual = $this->emailHandlerMock->isInDontThrottleList($exception);
-        $this->assertEquals($expected, $actual);
-    }
-
-    /**
-     * data provider for testIsInDontThrottleList
-     *
-     * @return array
-     */
-    public function isInDontThrottleListProvider()
-    {
-        return [
-            'in dont throttle list' => [
-                new Exception('Test Exception'),
-                [new Exception('Test Exception')],
-                true,
-                true,
-            ],
-            'not in dont throttle list' => [
-                new Exception('Test Exception'),
-                [new BadMethodCallException('Other Exception')],
-                false,
-                false,
-            ],
-        ];
-    }
-
-    /**
-     * test is in dont email list function
-     *
-     * @dataProvider isInDontEmailListProvider
-     * @param $exception
-     * @param $dontEmailList
-     * @param $isInListReturn
-     * @param $expected
-     */
-    public function testIsInDontEmailList($exception, $dontEmailList, $isInListReturn, $expected)
-    {
-
-        // set up config values
-        config([
-            'laravelEmailExceptions.ErrorEmail.dontEmail' => $dontEmailList,
-        ]);
-
-        // we should receive a call to is in list
-        $this->emailHandlerMock
-            ->shouldReceive('isInList')
-            ->once()
-            ->with($dontEmailList, $exception)
-            ->andReturn($isInListReturn);
-
-        // check if actual is = to expected
-        $actual = $this->emailHandlerMock->isInDontEmailList($exception);
-        $this->assertEquals($expected, $actual);
-    }
-
-    /**
-     * data provider for is testIsInDontEmailList
-     *
-     * @return array
-     */
-    public function isInDontEmailListProvider()
-    {
-        return [
-            'in dont email list' => [
-                new Exception('Test Exception'),
-                [new Exception('Test Exception')],
-                true,
-                true,
-            ],
-            'not in dont email list' => [
-                new Exception('Test Exception'),
-                [new BadMethodCallException('Other Exception')],
-                false,
-                false,
-            ],
+            'in list'     => [new Exception('Test'), [Exception::class],            true],
+            'not in list' => [new Exception('Test'), [BadMethodCallException::class], false],
         ];
     }
 }

@@ -1,44 +1,28 @@
 <?php
 
-namespace Abrigham\LaravelEmailExceptions;
+namespace InlinxLtd\LaravelEmailExceptions;
 
 use Illuminate\Support\ServiceProvider;
 
 class EmailExceptionsServiceProvider extends ServiceProvider
 {
-    /**
-     * Indicates if loading of the provider is deferred.
-     *
-     * @var bool
-     */
-    protected $defer = false;
-
-    /**
-     * Bootstrap the application services.
-     *
-     * @return void
-     */
-    public function boot()
+    public function boot(): void
     {
-        $this->loadViewsFrom(__DIR__.'/views', 'laravelEmailExceptions');
+        $this->loadViewsFrom(__DIR__ . '/views', 'laravelEmailExceptions');
 
         $this->publishes([
-            __DIR__.'/config/laravelEmailExceptions.php' => config_path('laravelEmailExceptions.php'),
+            __DIR__ . '/config/laravelEmailExceptions.php' => config_path('laravelEmailExceptions.php'),
         ], 'config');
+
         $this->publishes([
-            __DIR__.'/views' => resource_path('views/vendor/laravelEmailExceptions'),
+            __DIR__ . '/views' => resource_path('views/vendor/laravelEmailExceptions'),
         ], 'views');
     }
 
-    /**
-     * Register the application services.
-     *
-     * @return void
-     */
-    public function register()
+    public function register(): void
     {
         $this->mergeConfigFrom(
-            __DIR__.'/config/laravelEmailExceptions.php',
+            __DIR__ . '/config/laravelEmailExceptions.php',
             'laravelEmailExceptions'
         );
     }

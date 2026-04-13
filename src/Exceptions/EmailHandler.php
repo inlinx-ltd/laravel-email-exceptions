@@ -1,314 +1,208 @@
 <?php
 
-namespace Abrigham\LaravelEmailExceptions\Exceptions;
+namespace InlinxLtd\LaravelEmailExceptions\Exceptions;
 
 use Throwable;
-use Exception;
-use Mail;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 
 class EmailHandler extends ExceptionHandler
 {
+    /**
+     * Global throttle cache key shared across all exception types.
+     */
+    protected string $globalThrottleCacheKey = 'email_exception_global';
 
     /**
-     * @var string global throttle cache key
+     * Report or log an exception, and email it if it passes all checks.
      */
-    protected $globalThrottleCacheKey = "email_exception_global";
-
-    /**
-     * @var null|string throttle cache key
-     */
-    protected $throttleCacheKey = null;
-
-    /**
-     * Report or log an exception.
-     *
-     * This is a great spot to send exceptions to Sentry, Bugsnag, etc.
-     *
-     * @param Throwable $exception
-     * @throws Exception
-     */
-    public function report(Throwable $exception)
+    public function report(Throwable $exception): void
     {
-        // check if we should mail this exception
         if ($this->shouldMail($exception)) {
-            // if we passed our validation lets mail the exception
             $this->mailException($exception);
         }
 
-        // run the parent report (logs exception and all that good stuff)
         $this->callParentReport($exception);
     }
 
     /**
-     * wrapping the parent call to isolate for testing
-     *
-     * @param Throwable $exception
-     * @throws Exception
+     * Isolated to make testing easier.
      */
-    protected function callParentReport(Throwable $exception)
+    protected function callParentReport(Throwable $exception): void
     {
         parent::report($exception);
     }
 
     /**
-     * Determine if the exception should be mailed
-     *
-     * @param Throwable $exception
-     * @return bool
-     * @throws Exception
+     * Determine whether this exception should trigger an email.
      */
-    protected function shouldMail(Throwable $exception)
+    protected function shouldMail(Throwable $exception): bool
     {
-        // if emailing is turned off in the config
-        if (config('laravelEmailExceptions.ErrorEmail.email') != true ||
-
-            // if we dont have an email address to mail to
-            !config('laravelEmailExceptions.ErrorEmail.toEmailAddress', 'mail.from.address') ||
-
-            // if we dont have an email address to mail from
-            !config('laravelEmailExceptions.ErrorEmail.fromEmailAddress', 'mail.from.address') ||
-
-            $this->shouldntReport($exception) ||
-
-            // if the exception is in the don't mail list
-            $this->isInDontEmailList($exception) ||
-
-            // if there is any app specific don't email logic
-            $this->appSpecificDontEmail($exception) ||
-
-            // if the exception has already been mailed within the last throttle period
-            $this->throttle($exception) ||
-
-            // if we've already sent the maximum amount of emails for the global throttle period
-            $this->globalThrottle()
+        if (
+            config('laravelEmailExceptions.ErrorEmail.email') !== true
+            || !config('laravelEmailExceptions.ErrorEmail.toEmailAddress')
+            || !config('laravelEmailExceptions.ErrorEmail.fromEmailAddress')
+            || $this->shouldntReport($exception)
+            || $this->isInDontEmailList($exception)
+            || $this->appSpecificDontEmail($exception)
+            || $this->isThrottled($exception)
+            || $this->isGloballyThrottled()
         ) {
-            // we should not mail this exception
             return false;
         }
 
-        // we made it past all the possible reasons to not email so we should mail this exception
         return true;
     }
 
     /**
-     * app specific dont email logic should go in this function
-     *
-     * @param Throwable $exception
-     * @return bool
+     * Override this in your app's Handler to add custom skip logic beyond class matching.
      */
-    protected function appSpecificDontEmail(Throwable $exception)
+    protected function appSpecificDontEmail(Throwable $exception): bool
     {
-        // override this in app/Exceptions/Handler.php if you need more complicated logic
-        // then checking instanceof with exception classes
         return false;
     }
 
     /**
-     * mail the exception
-     *
-     * @param Throwable $exception
+     * Send the exception email, swallowing any mail failures to prevent cascading exceptions.
      */
-    protected function mailException(Throwable $exception)
+    protected function mailException(Throwable $exception): void
     {
-        $data = [
-            'exception' => $exception,
-            'toEmail' => config('laravelEmailExceptions.ErrorEmail.toEmailAddress', 'mail.from.address'),
-            'fromEmail' => config('laravelEmailExceptions.ErrorEmail.fromEmailAddress', 'mail.from.address'),
-        ];
+        try {
+            $toEmail    = config('laravelEmailExceptions.ErrorEmail.toEmailAddress');
+            $fromEmail  = config('laravelEmailExceptions.ErrorEmail.fromEmailAddress');
+            $data       = ['exception' => $exception];
 
-        Mail::send('laravelEmailExceptions::emailException', $data, function ($message) {
+            Mail::send(
+                'laravelEmailExceptions::emailException',
+                $data,
+                static function ($message) use ($toEmail, $fromEmail, $exception): void {
+                    $default = 'An Exception has been thrown on '
+                        . config('app.name', 'unknown')
+                        . ' (' . config('app.env', 'unknown') . ')'
+                        . ' — ' . get_class($exception);
 
-            $default = 'An Exception has been thrown on '.
-                config('app.name', 'unknown').' ('.config('app.env', 'unknown').')';
-            $subject = config('laravelEmailExceptions.ErrorEmail.emailSubject') ?: $default;
+                    $subject = config('laravelEmailExceptions.ErrorEmail.emailSubject') ?: $default;
 
-            $message->from(config('laravelEmailExceptions.ErrorEmail.fromEmailAddress', 'mail.from.address'))
-                ->to(config('laravelEmailExceptions.ErrorEmail.toEmailAddress', 'mail.from.address'))
-                ->subject($subject);
-        });
-    }
-
-    /**
-     * check if we need to globally throttle the exception
-     *
-     * @return bool
-     * @throws Exception
-     */
-    protected function globalThrottle()
-    {
-        // check if global throttling is turned on
-        if (config('laravelEmailExceptions.ErrorEmail.globalThrottle') == false) {
-            // no need to throttle since global throttling has been disabled
-            return false;
-        } else {
-            // if we have a cache key lets determine if we are over the limit or not
-            if (Cache::store(
-                config('laravelEmailExceptions.ErrorEmail.throttleCacheDriver')
-            )->has($this->globalThrottleCacheKey)
-            ) {
-                // if we are over the limit return true since this should be throttled
-                if (Cache::store(
-                    config('laravelEmailExceptions.ErrorEmail.throttleCacheDriver')
-                )->get(
-                    $this->globalThrottleCacheKey,
-                    0
-                ) >= config('laravelEmailExceptions.ErrorEmail.globalThrottleLimit')
-                ) {
-                    return true;
-                } else {
-                    // else lets increment the cache key and return false since its not time to throttle yet
-                    Cache::store(
-                        config('laravelEmailExceptions.ErrorEmail.throttleCacheDriver')
-                    )->increment($this->globalThrottleCacheKey);
-
-                    return false;
+                    $message->from($fromEmail)->to($toEmail)->subject($subject);
                 }
-            } else {
-                // we didn't find an item in cache lets put it in the cache
-                Cache::store(
-                    config('laravelEmailExceptions.ErrorEmail.throttleCacheDriver')
-                )->put(
-                    $this->globalThrottleCacheKey,
-                    1,
-                    $this->getDateTimeMinutesFromNow(
-                        config('laravelEmailExceptions.ErrorEmail.globalThrottleDurationMinutes')
-                    )
-                );
-
-                // if we're just making the cache key now we are not global throttling yet
-                return false;
-            }
-        }
-    }
-
-    /**
-     * check if we need to throttle the exception and do the throttling if required
-     *
-     * @param Throwable $exception
-     * @return bool
-     * @throws Exception
-     */
-    protected function throttle(Throwable $exception)
-    {
-        // if throttling is turned off or its in the dont throttle list we won't throttle this exception
-        if (config('laravelEmailExceptions.ErrorEmail.throttle') == false ||
-            $this->isInDontThrottleList($exception)
-        ) {
-            // report that we do not need to throttle
-            return false;
-        } else {
-            // else lets check if its been reported within the last throttle period
-            if (Cache::store(
-                config('laravelEmailExceptions.ErrorEmail.throttleCacheDriver')
-            )->has($this->getThrottleCacheKey($exception))
-            ) {
-                // if its in the cache we need to throttle
-                return true;
-            } else {
-                // its not in the cache lets add it to the cache
-                Cache::store(
-                    config('laravelEmailExceptions.ErrorEmail.throttleCacheDriver')
-                )->put(
-                    $this->getThrottleCacheKey($exception),
-                    true,
-                    $this->getDateTimeMinutesFromNow(
-                        config('laravelEmailExceptions.ErrorEmail.throttleDurationMinutes')
-                    )
-                );
-
-                // report that we do not need to throttle as its not been reported within the last throttle period
-                return false;
-            }
-        }
-    }
-
-    /**
-     * get the throttle cache key
-     *
-     * @param Throwable $exception
-     * @return mixed
-     */
-    protected function getThrottleCacheKey(Throwable $exception)
-    {
-
-        // if we haven't already set the cache key lets set it
-        if ($this->throttleCacheKey == null) {
-            // make up the cache key from a prefix, exception class, exception message, and exception code
-            // with all special characters removed
-            $this->throttleCacheKey = preg_replace(
-                "/[^A-Za-z0-9]/",
-                '',
-                'laravelEmailException'.get_class($exception).$exception->getMessage().$exception->getCode()
             );
+        } catch (Throwable $mailException) {
+            // Log mail failures but never let them bubble up into the exception handler itself
+            Log::error('LaravelEmailExceptions: failed to send exception email', [
+                'mail_error'         => $mailException->getMessage(),
+                'original_exception' => get_class($exception),
+            ]);
         }
-
-        // return the cache key
-        return $this->throttleCacheKey;
     }
 
     /**
-     * check if a given exception matches the class of any in the list
-     *
-     * @param $list
-     * @param Throwable $exception
-     * @return bool
+     * Check per-exception throttling. Returns true if this exact exception was
+     * already emailed within the configured throttle window.
      */
-    protected function isInList($list, Throwable $exception)
+    protected function isThrottled(Throwable $exception): bool
     {
-        // check if we actually have a list and its an array
-        if ($list && is_array($list)) {
-            // if we do lets loop through and check if our exception matches any of the classes
-            foreach ($list as $type) {
-                if ($exception instanceof $type) {
-                    // if we match return true
-                    return true;
-                }
-            }
+        if (
+            config('laravelEmailExceptions.ErrorEmail.throttle') === false
+            || $this->isInDontThrottleList($exception)
+        ) {
+            return false;
         }
 
-        // we got to the end there must be no match
+        $key   = $this->buildThrottleCacheKey($exception);
+        $store = $this->cacheStore();
+
+        if ($store->has($key)) {
+            return true;
+        }
+
+        $store->put(
+            $key,
+            true,
+            now()->addMinutes((int) config('laravelEmailExceptions.ErrorEmail.throttleDurationMinutes', 5))
+        );
+
         return false;
     }
 
     /**
-     * check if the exception is in the dont throttle list
-     *
-     * @param Throwable $exception
-     * @return bool
+     * Check global throttling. Returns true when the per-period email cap has been reached.
      */
-    protected function isInDontThrottleList(Throwable $exception)
+    protected function isGloballyThrottled(): bool
     {
-        $dontThrottleList = config('laravelEmailExceptions.ErrorEmail.dontThrottle');
+        if (config('laravelEmailExceptions.ErrorEmail.globalThrottle') === false) {
+            return false;
+        }
 
-        return $this->isInList($dontThrottleList, $exception);
+        $store = $this->cacheStore();
+        $limit = (int) config('laravelEmailExceptions.ErrorEmail.globalThrottleLimit', 20);
+        $ttl   = now()->addMinutes((int) config('laravelEmailExceptions.ErrorEmail.globalThrottleDurationMinutes', 30));
+
+        if ($store->has($this->globalThrottleCacheKey)) {
+            if ($store->get($this->globalThrottleCacheKey, 0) >= $limit) {
+                return true;
+            }
+
+            $store->increment($this->globalThrottleCacheKey);
+
+            return false;
+        }
+
+        $store->put($this->globalThrottleCacheKey, 1, $ttl);
+
+        return false;
     }
 
     /**
-     * check if the exception is in the dont email list
-     *
-     * @param Throwable $exception
-     * @return bool
+     * Build a unique, filesystem-safe cache key for the given exception.
+     * Computed fresh each call — avoids the bug in the original where a single
+     * instance variable was shared across multiple exceptions in the same process.
      */
-    protected function isInDontEmailList(Throwable $exception)
+    protected function buildThrottleCacheKey(Throwable $exception): string
     {
-        $dontEmailList = config('laravelEmailExceptions.ErrorEmail.dontEmail');
-
-        return $this->isInList($dontEmailList, $exception);
+        return preg_replace(
+            '/[^A-Za-z0-9]/',
+            '',
+            'laravelEmailException' . get_class($exception) . $exception->getMessage() . $exception->getCode()
+        );
     }
 
     /**
-     * get a datetime minutes from now
-     *
-     * @param int $minutesToAdd
-     * @return \DateTime
-     * @throws Exception
+     * Resolved cache store for throttling.
      */
-    protected function getDateTimeMinutesFromNow($minutesToAdd = 0)
+    protected function cacheStore(): \Illuminate\Contracts\Cache\Repository
     {
-        $now = new \DateTime();
+        return Cache::store(config('laravelEmailExceptions.ErrorEmail.throttleCacheDriver'));
+    }
 
-        return $now->modify("+{$minutesToAdd} minutes");
+    /**
+     * Check if the exception matches any class in a given list.
+     */
+    protected function isInList(array $list, Throwable $exception): bool
+    {
+        foreach ($list as $type) {
+            if ($exception instanceof $type) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function isInDontThrottleList(Throwable $exception): bool
+    {
+        return $this->isInList(
+            config('laravelEmailExceptions.ErrorEmail.dontThrottle', []),
+            $exception
+        );
+    }
+
+    protected function isInDontEmailList(Throwable $exception): bool
+    {
+        return $this->isInList(
+            config('laravelEmailExceptions.ErrorEmail.dontEmail', []),
+            $exception
+        );
     }
 }
