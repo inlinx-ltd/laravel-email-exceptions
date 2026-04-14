@@ -5,6 +5,7 @@ namespace InlinxLtd\LaravelEmailExceptions\Exceptions;
 use Throwable;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use InlinxLtd\LaravelEmailExceptions\ExceptionEmailService;
+use InlinxLtd\LaravelEmailExceptions\Mail\ExceptionMail;
 
 /**
  * Legacy integration: extend your App\Exceptions\Handler from this class

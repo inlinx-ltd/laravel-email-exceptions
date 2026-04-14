@@ -6,6 +6,7 @@ use Throwable;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use InlinxLtd\LaravelEmailExceptions\Mail\ExceptionMail;
 
 /**
  * Standalone service that decides whether to email an exception and sends it.
@@ -48,28 +49,14 @@ class ExceptionEmailService
 
     /**
      * Send the exception email, swallowing any mail failures to prevent cascading exceptions.
+     *
+     * Dispatches an ExceptionMail Mailable so that Mail::fake() + Mail::assertSent()
+     * work correctly in tests without requiring Mockery on the Mail facade.
      */
     public function send(Throwable $exception): void
     {
         try {
-            $toEmail   = config('laravelEmailExceptions.ErrorEmail.toEmailAddress');
-            $fromEmail = config('laravelEmailExceptions.ErrorEmail.fromEmailAddress');
-            $data      = ['exception' => $exception];
-
-            Mail::send(
-                'laravelEmailExceptions::emailException',
-                $data,
-                static function ($message) use ($toEmail, $fromEmail, $exception): void {
-                    $default = 'An Exception has been thrown on '
-                        . config('app.name', 'unknown')
-                        . ' (' . config('app.env', 'unknown') . ')'
-                        . ' — ' . get_class($exception);
-
-                    $subject = config('laravelEmailExceptions.ErrorEmail.emailSubject') ?: $default;
-
-                    $message->from($fromEmail)->to($toEmail)->subject($subject);
-                }
-            );
+            Mail::send(new ExceptionMail($exception));
         } catch (Throwable $mailException) {
             Log::error('LaravelEmailExceptions: failed to send exception email', [
                 'mail_error'         => $mailException->getMessage(),

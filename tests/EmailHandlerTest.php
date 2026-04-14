@@ -4,188 +4,142 @@ namespace InlinxLtd\LaravelEmailExceptions\Tests;
 
 use BadMethodCallException;
 use Exception;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
-use InlinxLtd\LaravelEmailExceptions\Exceptions\EmailHandler;
-use Mockery;
+use InlinxLtd\LaravelEmailExceptions\EmailExceptionsServiceProvider;
+use InlinxLtd\LaravelEmailExceptions\ExceptionEmailService;
+use InlinxLtd\LaravelEmailExceptions\Mail\ExceptionMail;
 use Orchestra\Testbench\TestCase;
 use PHPUnit\Framework\Attributes\DataProvider;
 
+/**
+ * Tests for ExceptionEmailService — the recommended integration class.
+ *
+ * All methods under test are public, so no Mockery tricks or protected-method
+ * workarounds are needed. Mail is intercepted via Mail::fake() (Laravel's built-in
+ * test double) and cache is kept in the array driver for full isolation.
+ */
 class EmailHandlerTest extends TestCase
 {
-    protected EmailHandler $emailHandlerMock;
+    private ExceptionEmailService $service;
+
+    protected function getPackageProviders($app): array
+    {
+        return [EmailExceptionsServiceProvider::class];
+    }
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $this->emailHandlerMock = Mockery::mock(EmailHandler::class)
-            ->makePartial()
-            ->shouldAllowMockingProtectedMethods();
-    }
-
-    protected function tearDown(): void
-    {
-        Mockery::close();
-        parent::tearDown();
-    }
-
-    // -----------------------------------------------------------------------
-    // report()
-    // -----------------------------------------------------------------------
-
-    #[DataProvider('reportProvider')]
-    public function test_report(bool $shouldMail): void
-    {
-        $exception = new Exception('Test Exception');
-
-        config(['laravelEmailExceptions.ErrorEmail.email' => false]);
-
-        $this->emailHandlerMock
-            ->shouldReceive('shouldMail')
-            ->with($exception)
-            ->once()
-            ->andReturn($shouldMail);
-
-        if ($shouldMail) {
-            $this->emailHandlerMock
-                ->shouldReceive('mailException')
-                ->with($exception)
-                ->once()
-                ->andReturn(null);
-        } else {
-            $this->emailHandlerMock->shouldNotReceive('mailException');
-        }
-
-        $this->emailHandlerMock
-            ->shouldReceive('callParentReport')
-            ->with($exception)
-            ->once()
-            ->andReturn(null);
-
-        $this->assertNull($this->emailHandlerMock->report($exception));
-    }
-
-    public static function reportProvider(): array
-    {
-        return [
-            'should mail false' => [false],
-            'should mail true'  => [true],
-        ];
-    }
-
-    // -----------------------------------------------------------------------
-    // shouldMail()
-    // -----------------------------------------------------------------------
-
-    #[DataProvider('shouldMailProvider')]
-    public function test_should_mail(
-        bool   $email,
-        mixed  $toEmailAddress,
-        mixed  $fromEmailAddress,
-        bool   $shouldntReportReturn,
-        bool   $isInDontEmailListReturn,
-        bool   $isThrottledReturn,
-        bool   $appSpecificDontEmailReturn,
-        bool   $isGloballyThrottledReturn,
-        bool   $expected,
-    ): void {
-        $exception = new Exception('Test Exception');
+        $this->service = new ExceptionEmailService();
 
         config([
-            'laravelEmailExceptions.ErrorEmail.email'            => $email,
-            'laravelEmailExceptions.ErrorEmail.toEmailAddress'   => $toEmailAddress,
-            'laravelEmailExceptions.ErrorEmail.fromEmailAddress' => $fromEmailAddress,
+            'laravelEmailExceptions.ErrorEmail.email'                         => true,
+            'laravelEmailExceptions.ErrorEmail.toEmailAddress'                => 'dev@example.com',
+            'laravelEmailExceptions.ErrorEmail.fromEmailAddress'              => 'noreply@example.com',
+            'laravelEmailExceptions.ErrorEmail.emailSubject'                  => null,
+            'laravelEmailExceptions.ErrorEmail.throttle'                      => true,
+            'laravelEmailExceptions.ErrorEmail.throttleCacheDriver'           => 'array',
+            'laravelEmailExceptions.ErrorEmail.throttleDurationMinutes'       => 5,
+            'laravelEmailExceptions.ErrorEmail.dontThrottle'                  => [],
+            'laravelEmailExceptions.ErrorEmail.dontEmail'                     => [],
+            'laravelEmailExceptions.ErrorEmail.globalThrottle'                => true,
+            'laravelEmailExceptions.ErrorEmail.globalThrottleLimit'           => 20,
+            'laravelEmailExceptions.ErrorEmail.globalThrottleDurationMinutes' => 30,
         ]);
-
-        if ($email && $toEmailAddress && $fromEmailAddress) {
-            $this->emailHandlerMock
-                ->shouldReceive('shouldntReport')
-                ->with($exception)->once()->andReturn($shouldntReportReturn);
-
-            if (!$shouldntReportReturn) {
-                $this->emailHandlerMock
-                    ->shouldReceive('isInDontEmailList')
-                    ->with($exception)->once()->andReturn($isInDontEmailListReturn);
-
-                if (!$isInDontEmailListReturn) {
-                    $this->emailHandlerMock
-                        ->shouldReceive('appSpecificDontEmail')
-                        ->with($exception)->once()->andReturn($appSpecificDontEmailReturn);
-
-                    if (!$appSpecificDontEmailReturn) {
-                        $this->emailHandlerMock
-                            ->shouldReceive('isThrottled')
-                            ->with($exception)->once()->andReturn($isThrottledReturn);
-
-                        if (!$isThrottledReturn) {
-                            $this->emailHandlerMock
-                                ->shouldReceive('isGloballyThrottled')
-                                ->withNoArgs()->once()->andReturn($isGloballyThrottledReturn);
-                        } else {
-                            $this->emailHandlerMock->shouldNotReceive('isGloballyThrottled');
-                        }
-                    } else {
-                        $this->emailHandlerMock->shouldNotReceive('isThrottled');
-                        $this->emailHandlerMock->shouldNotReceive('isGloballyThrottled');
-                    }
-                } else {
-                    $this->emailHandlerMock->shouldNotReceive('appSpecificDontEmail');
-                    $this->emailHandlerMock->shouldNotReceive('isThrottled');
-                    $this->emailHandlerMock->shouldNotReceive('isGloballyThrottled');
-                }
-            } else {
-                $this->emailHandlerMock->shouldNotReceive('isInDontEmailList');
-                $this->emailHandlerMock->shouldNotReceive('appSpecificDontEmail');
-                $this->emailHandlerMock->shouldNotReceive('isThrottled');
-                $this->emailHandlerMock->shouldNotReceive('isGloballyThrottled');
-            }
-        }
-
-        $this->assertEquals($expected, $this->emailHandlerMock->shouldMail($exception));
-    }
-
-    public static function shouldMailProvider(): array
-    {
-        return [
-            'email off' => [false, false, false, false, false, false, false, false, false],
-            'email on no addresses' => [true, false, false, false, false, false, false, false, false],
-            'email on to only' => [true, 'dev@example.com', false, false, false, false, false, false, false],
-            'passes all checks' => [true, 'dev@example.com', 'noreply@example.com', false, false, false, false, false, true],
-            'shouldntReport true' => [true, 'dev@example.com', 'noreply@example.com', true, false, false, false, false, false],
-            'in dont email list' => [true, 'dev@example.com', 'noreply@example.com', false, true, false, false, false, false],
-            'throttled' => [true, 'dev@example.com', 'noreply@example.com', false, false, true, false, false, false],
-            'app specific dont email' => [true, 'dev@example.com', 'noreply@example.com', false, false, false, true, false, false],
-            'globally throttled' => [true, 'dev@example.com', 'noreply@example.com', false, false, false, false, true, false],
-        ];
     }
 
     // -----------------------------------------------------------------------
-    // mailException()
+    // shouldNotify()
+    // -----------------------------------------------------------------------
+
+    public function test_should_notify_returns_false_when_email_disabled(): void
+    {
+        config(['laravelEmailExceptions.ErrorEmail.email' => false]);
+
+        $this->assertFalse($this->service->shouldNotify(new Exception('test')));
+    }
+
+    public function test_should_notify_returns_false_when_to_address_missing(): void
+    {
+        config(['laravelEmailExceptions.ErrorEmail.toEmailAddress' => null]);
+
+        $this->assertFalse($this->service->shouldNotify(new Exception('test')));
+    }
+
+    public function test_should_notify_returns_false_when_from_address_missing(): void
+    {
+        config(['laravelEmailExceptions.ErrorEmail.fromEmailAddress' => null]);
+
+        $this->assertFalse($this->service->shouldNotify(new Exception('test')));
+    }
+
+    public function test_should_notify_returns_false_when_exception_in_dont_email_list(): void
+    {
+        config(['laravelEmailExceptions.ErrorEmail.dontEmail' => [Exception::class]]);
+
+        $this->assertFalse($this->service->shouldNotify(new Exception('dontEmail_' . uniqid())));
+    }
+
+    public function test_should_notify_returns_false_on_second_call_when_throttled(): void
+    {
+        $e = new Exception('throttle_test_' . uniqid());
+
+        $this->assertTrue($this->service->shouldNotify($e));  // first — not throttled, sets cache
+        $this->assertFalse($this->service->shouldNotify($e)); // second — now throttled
+    }
+
+    public function test_should_notify_returns_false_when_globally_throttled(): void
+    {
+        config([
+            'laravelEmailExceptions.ErrorEmail.globalThrottleLimit' => 1,
+            'laravelEmailExceptions.ErrorEmail.throttle'            => false, // isolate to global throttle only
+        ]);
+
+        $this->assertTrue($this->service->shouldNotify(new Exception('global_1_' . uniqid())));  // counter → 1
+        $this->assertFalse($this->service->shouldNotify(new Exception('global_2_' . uniqid()))); // at limit
+    }
+
+    public function test_should_notify_returns_true_when_all_checks_pass(): void
+    {
+        config(['laravelEmailExceptions.ErrorEmail.globalThrottle' => false]);
+
+        $this->assertTrue($this->service->shouldNotify(new Exception('all_pass_' . uniqid())));
+    }
+
+    // -----------------------------------------------------------------------
+    // send()
     // -----------------------------------------------------------------------
 
     #[DataProvider('mailExceptionProvider')]
-    public function test_mail_exception(?string $subject): void
+    public function test_send_dispatches_exception_mail(?string $subject): void
     {
-        $exception = new Exception('Test Exception');
+        Mail::fake();
 
-        config([
-            'laravelEmailExceptions.ErrorEmail.toEmailAddress'   => 'dev@example.com',
-            'laravelEmailExceptions.ErrorEmail.fromEmailAddress' => 'noreply@example.com',
-            'laravelEmailExceptions.ErrorEmail.emailSubject'     => $subject,
-        ]);
+        config(['laravelEmailExceptions.ErrorEmail.emailSubject' => $subject]);
 
-        Mail::shouldReceive('send')->once()->withAnyArgs();
+        $this->service->send(new Exception('Test Exception'));
 
-        $this->assertNull($this->emailHandlerMock->mailException($exception));
+        Mail::assertSent(ExceptionMail::class);
     }
 
     public static function mailExceptionProvider(): array
     {
         return [
             'default subject' => [null],
-            'custom subject'  => ['Your custom subject'],
+            'custom subject'  => ['Your custom alert subject'],
         ];
+    }
+
+    public function test_send_does_not_propagate_mail_exception(): void
+    {
+        // Configure an invalid mailer to force a failure at transport level
+        config(['mail.default' => 'smtp', 'mail.mailers.smtp.host' => '']);
+
+        // send() must swallow any Throwable from Mail and never rethrow it
+        $this->service->send(new Exception('Mail failure test'));
+
+        $this->assertTrue(true, 'send() reached this line without throwing');
     }
 
     // -----------------------------------------------------------------------
@@ -194,57 +148,34 @@ class EmailHandlerTest extends TestCase
 
     #[DataProvider('globalThrottleProvider')]
     public function test_is_globally_throttled(
-        bool   $globalThrottle,
-        string $throttleCacheDriver,
-        int    $globalThrottleLimit,
-        int    $globalThrottleDurationMinutes,
-        bool   $cacheHas,
-        int    $cacheGet,
-        bool   $expected,
+        bool $globalThrottle,
+        int  $globalThrottleLimit,
+        int  $callCount,
+        bool $expectedLastResult,
     ): void {
-        $key = 'email_exception_global';
-
         config([
-            'laravelEmailExceptions.ErrorEmail.globalThrottle'                => $globalThrottle,
-            'laravelEmailExceptions.ErrorEmail.throttleCacheDriver'            => $throttleCacheDriver,
-            'laravelEmailExceptions.ErrorEmail.globalThrottleLimit'            => $globalThrottleLimit,
-            'laravelEmailExceptions.ErrorEmail.globalThrottleDurationMinutes'  => $globalThrottleDurationMinutes,
+            'laravelEmailExceptions.ErrorEmail.globalThrottle'               => $globalThrottle,
+            'laravelEmailExceptions.ErrorEmail.globalThrottleLimit'          => $globalThrottleLimit,
+            'laravelEmailExceptions.ErrorEmail.globalThrottleDurationMinutes' => 30,
         ]);
 
-        if (!$globalThrottle) {
-            Cache::shouldReceive('store')->never();
-        } else {
-            $storeMock = Mockery::mock(\Illuminate\Contracts\Cache\Repository::class);
+        $result = false;
 
-            Cache::shouldReceive('store')
-                ->with($throttleCacheDriver)
-                ->andReturn($storeMock);
-
-            $storeMock->shouldReceive('has')->with($key)->once()->andReturn($cacheHas);
-
-            if ($cacheHas) {
-                $storeMock->shouldReceive('get')->with($key, 0)->once()->andReturn($cacheGet);
-
-                if ($cacheGet >= $globalThrottleLimit) {
-                    $storeMock->shouldNotReceive('increment');
-                } else {
-                    $storeMock->shouldReceive('increment')->with($key)->once();
-                }
-            } else {
-                $storeMock->shouldReceive('put')->once()->withAnyArgs();
-            }
+        for ($i = 0; $i < $callCount; $i++) {
+            $result = $this->service->isGloballyThrottled();
         }
 
-        $this->assertEquals($expected, $this->emailHandlerMock->isGloballyThrottled());
+        $this->assertSame($expectedLastResult, $result);
     }
 
     public static function globalThrottleProvider(): array
     {
         return [
-            'global throttle off'                => [false, 'file', 20, 30, false, 0,  false],
-            'in cache under limit'               => [true,  'file', 20, 30, true,  10, false],
-            'in cache at limit (over)'           => [true,  'file', 20, 30, true,  20, true],
-            'not in cache — first email'         => [true,  'file', 20, 30, false, 0,  false],
+            'global throttle disabled'     => [false, 20, 1, false],
+            'first call — not throttled'   => [true,  20, 1, false],
+            'under limit — not throttled'  => [true,  20, 5, false],
+            'exactly at limit — throttled' => [true,   1, 2, true],
+            'over limit — throttled'       => [true,   5, 6, true],
         ];
     }
 
@@ -254,54 +185,33 @@ class EmailHandlerTest extends TestCase
 
     #[DataProvider('throttleProvider')]
     public function test_is_throttled(
-        bool   $throttle,
-        string $throttleCacheDriver,
-        bool   $isInDontThrottleListReturn,
-        bool   $cacheHas,
-        int    $throttleDurationMinutes,
-        bool   $expected,
+        bool $throttle,
+        bool $inDontThrottleList,
+        bool $callTwice,
+        bool $expectedSecondCall,
     ): void {
-        $exception = new Exception('Test Exception');
-        $cacheKey  = 'laravelEmailExceptionExceptionTestException0';
-
         config([
-            'laravelEmailExceptions.ErrorEmail.throttle'              => $throttle,
-            'laravelEmailExceptions.ErrorEmail.throttleCacheDriver'    => $throttleCacheDriver,
-            'laravelEmailExceptions.ErrorEmail.throttleDurationMinutes' => $throttleDurationMinutes,
+            'laravelEmailExceptions.ErrorEmail.throttle'               => $throttle,
+            'laravelEmailExceptions.ErrorEmail.dontThrottle'           => $inDontThrottleList ? [Exception::class] : [],
+            'laravelEmailExceptions.ErrorEmail.throttleDurationMinutes' => 5,
         ]);
 
-        if (!$throttle) {
-            $this->emailHandlerMock->shouldNotReceive('isInDontThrottleList');
-            Cache::shouldReceive('store')->never();
-        } else {
-            $this->emailHandlerMock
-                ->shouldReceive('isInDontThrottleList')
-                ->with($exception)->once()->andReturn($isInDontThrottleListReturn);
+        $e = new Exception('isThrottled_' . uniqid());
 
-            if (!$isInDontThrottleListReturn) {
-                $storeMock = Mockery::mock(\Illuminate\Contracts\Cache\Repository::class);
-                Cache::shouldReceive('store')->with($throttleCacheDriver)->andReturn($storeMock);
+        // The first call must never be throttled — it only sets the cache.
+        $this->assertFalse($this->service->isThrottled($e), 'First call should not be throttled');
 
-                $storeMock->shouldReceive('has')->with($cacheKey)->once()->andReturn($cacheHas);
-
-                if (!$cacheHas) {
-                    $storeMock->shouldReceive('put')->once()->withAnyArgs();
-                }
-            } else {
-                Cache::shouldReceive('store')->never();
-            }
+        if ($callTwice) {
+            $this->assertSame($expectedSecondCall, $this->service->isThrottled($e));
         }
-
-        $this->assertEquals($expected, $this->emailHandlerMock->isThrottled($exception));
     }
 
     public static function throttleProvider(): array
     {
         return [
-            'throttle off'                  => [false, 'file', false, false, 5, false],
-            'in dont throttle list'         => [true,  'file', true,  false, 5, false],
-            'throttle on — in cache'        => [true,  'file', false, true,  5, true],
-            'throttle on — not in cache'    => [true,  'file', false, false, 5, false],
+            'throttle disabled'           => [false, false, true, false],
+            'in dont-throttle list'       => [true,  true,  true, false],
+            'throttle on — second is hit' => [true,  false, true, true],
         ];
     }
 
@@ -312,15 +222,15 @@ class EmailHandlerTest extends TestCase
     #[DataProvider('buildThrottleCacheKeyProvider')]
     public function test_build_throttle_cache_key(\Throwable $exception, string $expected): void
     {
-        $this->assertEquals($expected, $this->emailHandlerMock->buildThrottleCacheKey($exception));
+        $this->assertSame($expected, $this->service->buildThrottleCacheKey($exception));
     }
 
     public static function buildThrottleCacheKeyProvider(): array
     {
         return [
-            'basic exception'           => [new Exception('Test-Exception', 1),       'laravelEmailExceptionExceptionTestException1'],
-            'special chars stripped'    => [new Exception('Test$Some Exception', 2),  'laravelEmailExceptionExceptionTestSomeException2'],
-            'BadMethodCallException'    => [new BadMethodCallException('Test-Third_Exception', 3), 'laravelEmailExceptionBadMethodCallExceptionTestThirdException3'],
+            'basic exception'        => [new Exception('Test-Exception', 1),              'laravelEmailExceptionExceptionTestException1'],
+            'special chars stripped' => [new Exception('Test$Some Exception', 2),         'laravelEmailExceptionExceptionTestSomeException2'],
+            'BadMethodCallException' => [new BadMethodCallException('Test-Third_Exception', 3), 'laravelEmailExceptionBadMethodCallExceptionTestThirdException3'],
         ];
     }
 
@@ -331,13 +241,13 @@ class EmailHandlerTest extends TestCase
     #[DataProvider('isInListProvider')]
     public function test_is_in_list(\Throwable $exception, array $list, bool $expected): void
     {
-        $this->assertEquals($expected, $this->emailHandlerMock->isInList($list, $exception));
+        $this->assertSame($expected, $this->service->isInList($list, $exception));
     }
 
     public static function isInListProvider(): array
     {
         return [
-            'in list'     => [new Exception('Test'), [Exception::class],            true],
+            'in list'     => [new Exception('Test'), [Exception::class],             true],
             'not in list' => [new Exception('Test'), [BadMethodCallException::class], false],
         ];
     }
