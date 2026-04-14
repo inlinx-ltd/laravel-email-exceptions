@@ -1,0 +1,5 @@
+{
+    "intelephense.environment.phpVersion": "8.2",
+    "intelephense.files.exclude": [],
+    "intelephense.phpdoc.returnVoid": false
+}

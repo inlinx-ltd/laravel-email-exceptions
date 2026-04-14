@@ -154,8 +154,8 @@ class EmailHandlerTest extends TestCase
         bool $expectedLastResult,
     ): void {
         config([
-            'laravelEmailExceptions.ErrorEmail.globalThrottle'               => $globalThrottle,
-            'laravelEmailExceptions.ErrorEmail.globalThrottleLimit'          => $globalThrottleLimit,
+            'laravelEmailExceptions.ErrorEmail.globalThrottle'                => $globalThrottle,
+            'laravelEmailExceptions.ErrorEmail.globalThrottleLimit'           => $globalThrottleLimit,
             'laravelEmailExceptions.ErrorEmail.globalThrottleDurationMinutes' => 30,
         ]);
 
@@ -228,9 +228,9 @@ class EmailHandlerTest extends TestCase
     public static function buildThrottleCacheKeyProvider(): array
     {
         return [
-            'basic exception'        => [new Exception('Test-Exception', 1),              'laravelEmailExceptionExceptionTestException1'],
-            'special chars stripped' => [new Exception('Test$Some Exception', 2),         'laravelEmailExceptionExceptionTestSomeException2'],
-            'BadMethodCallException' => [new BadMethodCallException('Test-Third_Exception', 3), 'laravelEmailExceptionBadMethodCallExceptionTestThirdException3'],
+            'basic exception'        => [new Exception('Test-Exception', 1),                       'laravelEmailExceptionExceptionTestException1'],
+            'special chars stripped' => [new Exception('Test$Some Exception', 2),                  'laravelEmailExceptionExceptionTestSomeException2'],
+            'BadMethodCallException' => [new BadMethodCallException('Test-Third_Exception', 3),    'laravelEmailExceptionBadMethodCallExceptionTestThirdException3'],
         ];
     }
 
