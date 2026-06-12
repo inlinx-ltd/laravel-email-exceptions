@@ -1,6 +1,6 @@
 {
     "name": "inlinx-ltd/laravel-email-exceptions",
-    "description": "Email exceptions from your Laravel application with per-exception and global throttling. Fork of abrigham/laravel-email-exceptions, maintained for Laravel 9-12.",
+    "description": "Email exceptions from your Laravel application with per-exception and global throttling. Fork of abrigham/laravel-email-exceptions, maintained for Laravel 9-13.",
     "license": "MIT",
     "keywords": ["email", "exception", "laravel", "exception-handling", "debugging", "notifications"],
     "authors": [
@@ -16,13 +16,13 @@
     "minimum-stability": "stable",
     "require": {
         "php": "^8.2",
-        "illuminate/support": "^9.0|^10.0|^11.0|^12.0",
-        "illuminate/mail": "^9.0|^10.0|^11.0|^12.0",
-        "illuminate/cache": "^9.0|^10.0|^11.0|^12.0"
+        "illuminate/support": "^9.0|^10.0|^11.0|^12.0|^13.0",
+        "illuminate/mail": "^9.0|^10.0|^11.0|^12.0|^13.0",
+        "illuminate/cache": "^9.0|^10.0|^11.0|^12.0|^13.0"
     },
     "require-dev": {
-        "phpunit/phpunit": "^10.0|^11.0",
-        "orchestra/testbench": "^8.0|^9.0|^10.0",
+        "phpunit/phpunit": "^10.0|^11.0|^13.0",
+        "orchestra/testbench": "^8.0|^9.0|^10.0|^11.0",
         "mockery/mockery": "^1.6"
     },
     "autoload": {
