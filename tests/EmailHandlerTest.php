@@ -46,6 +46,7 @@ class EmailHandlerTest extends TestCase
             'laravelEmailExceptions.ErrorEmail.globalThrottle'                => true,
             'laravelEmailExceptions.ErrorEmail.globalThrottleLimit'           => 20,
             'laravelEmailExceptions.ErrorEmail.globalThrottleDurationMinutes' => 30,
+            'laravelEmailExceptions.ErrorEmail.sentryFallback'                => true,
         ]);
     }
 
@@ -140,6 +141,39 @@ class EmailHandlerTest extends TestCase
         $this->service->send(new Exception('Mail failure test'));
 
         $this->assertTrue(true, 'send() reached this line without throwing');
+    }
+
+    public function test_should_capture_sentry_fallback_is_false_when_disabled(): void
+    {
+        config(['laravelEmailExceptions.ErrorEmail.sentryFallback' => false]);
+
+        $this->assertFalse($this->service->shouldCaptureSentryFallback(new Exception('ses paused')));
+    }
+
+    public function test_should_capture_sentry_fallback_is_false_without_dsn(): void
+    {
+        $this->assertFalse($this->service->shouldCaptureSentryFallback(new Exception('ses paused')));
+    }
+
+    public function test_sentry_fallback_cache_key_differs_by_mail_error_message(): void
+    {
+        $paused = new Exception('Sending paused for this account.');
+        $signature = new Exception('The request signature we calculated does not match');
+
+        $this->assertNotSame(
+            $this->service->sentryFallbackCacheKey($paused),
+            $this->service->sentryFallbackCacheKey($signature),
+        );
+    }
+
+    public function test_sentry_fallback_cache_key_is_stable_for_same_mail_error(): void
+    {
+        $e = new Exception('Sending paused for this account.');
+
+        $this->assertSame(
+            $this->service->sentryFallbackCacheKey($e),
+            $this->service->sentryFallbackCacheKey($e),
+        );
     }
 
     // -----------------------------------------------------------------------

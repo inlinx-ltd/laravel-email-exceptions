@@ -71,5 +71,13 @@ return [
          * "An Exception has been thrown on {APP_NAME} ({APP_ENV}) — {ExceptionClass}"
          */
         'emailSubject' => env('EXCEPTION_EMAIL_SUBJECT', null),
+
+        /*
+         * When exception email itself fails (e.g. SES paused), report that mail
+         * failure to Sentry. Requires sentry/sentry-laravel in the host app and
+         * a DSN. One event per UTC day per distinct mail-error message.
+         * Automatic Sentry exception capture is not enabled by this package.
+         */
+        'sentryFallback' => env('EXCEPTION_EMAIL_SENTRY_FALLBACK', true),
     ],
 ];

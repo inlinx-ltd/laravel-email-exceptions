@@ -62,6 +62,8 @@ class ExceptionEmailService
                 'mail_error'         => $mailException->getMessage(),
                 'original_exception' => get_class($exception),
             ]);
+
+            $this->reportMailFailureToSentry($mailException, $exception);
         }
     }
 
@@ -163,6 +165,69 @@ class ExceptionEmailService
             config('laravelEmailExceptions.ErrorEmail.dontEmail', []),
             $exception
         );
+    }
+
+    /**
+     * One Sentry event per UTC day per distinct mail-transport error message.
+     * No-op when Sentry is not installed or has no client (empty DSN).
+     */
+    public function shouldCaptureSentryFallback(Throwable $mailException): bool
+    {
+        if (config('laravelEmailExceptions.ErrorEmail.sentryFallback') === false) {
+            return false;
+        }
+
+        if (!\function_exists('\\Sentry\\captureException')) {
+            return false;
+        }
+
+        $dsn = (string) (config('sentry.dsn') ?: '');
+        if ($dsn === '') {
+            return false;
+        }
+
+        return !$this->cacheStore()->has($this->sentryFallbackCacheKey($mailException));
+    }
+
+    /**
+     * Cache key for the Sentry mail-failure fallback.
+     * Distinct by UTC date + mail exception class + message.
+     */
+    public function sentryFallbackCacheKey(Throwable $mailException): string
+    {
+        return 'laravelEmailExceptionSentry'
+            . now()->utc()->toDateString()
+            . hash('sha256', $mailException::class . $mailException->getMessage());
+    }
+
+    protected function reportMailFailureToSentry(Throwable $mailException, Throwable $originalException): void
+    {
+        if (!$this->shouldCaptureSentryFallback($mailException)) {
+            return;
+        }
+
+        try {
+            \Sentry\withScope(function (\Sentry\State\Scope $scope) use ($mailException, $originalException): void {
+                $scope->setTag('source', 'exception_email_failure');
+                $scope->setContext('original_exception', [
+                    'class'   => $originalException::class,
+                    'message' => $originalException->getMessage(),
+                ]);
+                \Sentry\captureException($mailException);
+            });
+            \Sentry\flush(2);
+
+            $this->cacheStore()->put(
+                $this->sentryFallbackCacheKey($mailException),
+                true,
+                now()->utc()->endOfDay()
+            );
+        } catch (Throwable $sentryException) {
+            Log::error('LaravelEmailExceptions: Sentry fallback failed', [
+                'sentry_error' => $sentryException->getMessage(),
+                'mail_error'   => $mailException->getMessage(),
+            ]);
+        }
     }
 
     protected function cacheStore(): \Illuminate\Contracts\Cache\Repository

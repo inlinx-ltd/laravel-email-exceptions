@@ -117,6 +117,7 @@ Published config at `config/laravelEmailExceptions.php`:
     'toEmailAddress' => env('EXCEPTION_EMAIL_TO', null),
     'fromEmailAddress' => env('EXCEPTION_EMAIL_FROM', env('MAIL_FROM_ADDRESS', null)),
     'emailSubject' => env('EXCEPTION_EMAIL_SUBJECT', null),
+    'sentryFallback' => env('EXCEPTION_EMAIL_SENTRY_FALLBACK', true),
 ],
 ```
 
@@ -127,6 +128,20 @@ Published config at `config/laravelEmailExceptions.php`:
 **Global throttle** (`globalThrottle`): Regardless of exception type, once `globalThrottleLimit` emails have been sent within `globalThrottleDurationMinutes`, all further emails are suppressed for the remainder of that window. Protects your inbox during major outages.
 
 > **Tip for multi-server deployments**: Set `throttleCacheDriver` to `redis` so throttle state is shared across all instances.
+
+### Sentry fallback (optional)
+
+When the exception email itself cannot be sent (SES paused, bad credentials, etc.), the package can emit **one Sentry event per UTC day per distinct mail-error message**. It does **not** capture application exceptions automatically.
+
+Install `sentry/sentry-laravel` in the host app, set `SENTRY_LARAVEL_DSN`, and **do not** call `Sentry\Laravel\Integration::handles()` in `bootstrap/app.php`. Capture is manual from this package's mail-failure catch only.
+
+```dotenv
+SENTRY_LARAVEL_DSN=
+SENTRY_TRACES_SAMPLE_RATE=0
+EXCEPTION_EMAIL_SENTRY_FALLBACK=true
+```
+
+Set `EXCEPTION_EMAIL_SENTRY_FALLBACK=false` to disable the fallback while leaving the DSN in place.
 
 ---
 
