@@ -130,10 +130,9 @@ class ExceptionEmailService
      */
     public function buildThrottleCacheKey(Throwable $exception): string
     {
-        return preg_replace(
-            '/[^A-Za-z0-9]/',
-            '',
-            'laravelEmailException' . get_class($exception) . $exception->getMessage() . $exception->getCode()
+        // Hashed: raw messages (e.g. SQL errors) can exceed the cache table's 255-char key column.
+        return 'laravelEmailException' . sha1(
+            get_class($exception) . $exception->getMessage() . $exception->getCode()
         );
     }
 

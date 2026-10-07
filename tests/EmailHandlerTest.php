@@ -262,9 +262,9 @@ class EmailHandlerTest extends TestCase
     public static function buildThrottleCacheKeyProvider(): array
     {
         return [
-            'basic exception'        => [new Exception('Test-Exception', 1),                       'laravelEmailExceptionExceptionTestException1'],
-            'special chars stripped' => [new Exception('Test$Some Exception', 2),                  'laravelEmailExceptionExceptionTestSomeException2'],
-            'BadMethodCallException' => [new BadMethodCallException('Test-Third_Exception', 3),    'laravelEmailExceptionBadMethodCallExceptionTestThirdException3'],
+            'basic exception'        => [new Exception('Test-Exception', 1),                    'laravelEmailException' . sha1('ExceptionTest-Exception1')],
+            'special chars hashed'   => [new Exception('Test$Some Exception', 2),               'laravelEmailException' . sha1('ExceptionTest$Some Exception2')],
+            'BadMethodCallException' => [new BadMethodCallException('Test-Third_Exception', 3), 'laravelEmailException' . sha1('BadMethodCallExceptionTest-Third_Exception3')],
         ];
     }
 
