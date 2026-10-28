@@ -1,6 +1,6 @@
 # Laravel Email Exceptions
 
-> **Maintained fork** of [`abrigham/laravel-email-exceptions`](https://github.com/abrigham1/laravel-email-exceptions) (abandoned), updated for **Laravel 9–12** and **PHP 8.2+**.
+> **Maintained fork** of [`abrigham/laravel-email-exceptions`](https://github.com/abrigham1/laravel-email-exceptions) (abandoned), updated for **Laravel 11–13** and **PHP 8.4+**. Released under the MIT licence, see [Credits and licence](#credits-and-licence).
 
 Emails exception details to your development team whenever an unhandled exception is thrown. Supports:
 
@@ -15,16 +15,19 @@ Emails exception details to your development team whenever an unhandled exceptio
 
 ## Requirements
 
-- PHP **^8.2**
-- Laravel **9.x / 10.x / 11.x / 12.x**
+- PHP **8.4 or newer**
+- Laravel **11.x / 12.x / 13.x**
 
 ---
 
 ## Installation
 
 ```bash
-composer require inlinx-ltd/laravel-email-exceptions
+composer config repositories.laravel-email-exceptions vcs https://github.com/inlinx-ltd/laravel-email-exceptions.git
+composer require inlinx-ltd/laravel-email-exceptions:^1.2.1
 ```
+
+(The first line is not needed once the package is listed on Packagist.)
 
 ### 1. Update `app/Exceptions/Handler.php`
 
@@ -167,7 +170,7 @@ protected function appSpecificDontEmail(Throwable $exception): bool
 
 | Change | Detail |
 |---|---|
-| Laravel 12 support | `illuminate/support ^9-12`, PHP `^8.2` |
+| Laravel 11-13 support | `illuminate/*` up to `^13`, PHP `^8.4` |
 | Namespace | `Abrigham\` → `InlinxLtd\` |
 | Cache key bug fixed | Cache key was stored in an instance variable — reused across multiple exceptions in the same process. Now computed fresh each call. |
 | Cascade protection | `mailException()` wrapped in try-catch; mail failures are logged and never re-throw into the exception handler |
@@ -184,3 +187,17 @@ protected function appSpecificDontEmail(Throwable $exception): bool
 MIT — see [LICENSE.txt](LICENSE.txt)
 
 Original work © Aaron Brigham. Fork maintained by [Inlinx Ltd](https://github.com/inlinx-ltd).
+
+---
+
+## Credits and licence
+
+This package is a fork of [`abrigham/laravel-email-exceptions`](https://github.com/abrigham1/laravel-email-exceptions) by Aaron Brigham, which is released under the MIT licence. The original work is copyright (c) 2017 Aaron Brigham; the changes in this fork are copyright (c) 2026 Inlinx Ltd. Both copyright notices are kept in [LICENSE.txt](LICENSE.txt), as the MIT licence requires. Thanks to Aaron Brigham and the other upstream contributors (howdu, Matus Rohal, Edgard Barquero).
+
+Released under the [MIT licence](LICENSE.txt).
+
+## Releasing a change
+
+1. Change the code and tests, run `vendor/bin/phpunit`.
+2. Commit, tag (`git tag -a v1.2.2 -m "1.2.2"`) and push the tag.
+3. In each project run `composer update inlinx-ltd/laravel-email-exceptions`, run its tests, and commit `composer.lock`.
