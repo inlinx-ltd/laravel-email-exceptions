@@ -24,7 +24,7 @@ class EmailHandler extends ExceptionHandler
 {
     private ExceptionEmailService $emailService;
 
-    public function __construct($container)
+    public function __construct(\Illuminate\Contracts\Container\Container $container)
     {
         parent::__construct($container);
         $this->emailService = new ExceptionEmailService();

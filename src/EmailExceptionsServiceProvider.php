@@ -30,9 +30,18 @@ class EmailExceptionsServiceProvider extends ServiceProvider
         // The base handler's shouldntReport() check runs BEFORE any reportable()
         // callbacks, so ValidationException, AuthenticationException, etc. are
         // already filtered out before we even see them here.
+        $handler = app('Illuminate\Contracts\Debug\ExceptionHandler');
+
+        // Laravel 9/10 wrap the handler in Collision's adapter in the console, and that adapter has no
+        // reportable(). Apps on those versions extend the legacy EmailHandler instead (which also covers the
+        // console), so skip the automatic hook there; otherwise every exception would be mailed twice.
+        if (! method_exists($handler, 'reportable') || $handler instanceof Exceptions\EmailHandler) {
+            return;
+        }
+
         $service = new ExceptionEmailService();
 
-        app('Illuminate\Contracts\Debug\ExceptionHandler')->reportable(
+        $handler->reportable(
             static function (Throwable $exception) use ($service): void {
                 if ($service->shouldNotify($exception)) {
                     $service->send($exception);
